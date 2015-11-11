@@ -3,6 +3,9 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats as stats
+import propr_tools
+import time
+np.random.seed(1)
 #Read in the properties (top layer)
 dtype={'names': ('code','ud','ld','min','mid','max'),
        'formats': ('S100','f4','f4','f4','f4','f4')}
@@ -22,10 +25,10 @@ for ic in xrange(nc):
  file = 'probabilities/%s.tif' % data['code'][ic]
  probabilities[ic,:,:] = gdal_tools.read_raster(file)[:]
 #Sort the array
-argsort = np.flipud(np.argsort(probabilities,axis=0))
-probs = np.flipud(np.sort(probabilities,axis=0))
+argsort = np.flipud(np.argsort(probabilities,axis=0)).astype(np.int32)
+probs = np.flipud(np.sort(probabilities,axis=0)).astype(np.float32)
 #Draw n draws per soil class
-draws = np.zeros((nc,nd))
+draws = np.zeros((nc,nd)).astype(np.float32)
 for ic in data['id']:
  #c = 0.1
  loc = data['min'][ic]
@@ -34,7 +37,7 @@ for ic in data['id']:
  tmp = stats.triang.rvs(mode,loc=loc,scale=scale,size=nd)
  draws[ic,:] = tmp
 #Create the draws array
-output = np.zeros((nd,metadata['ny'],metadata['nx']))
+'''output = np.zeros((nd,metadata['ny'],metadata['nx']))
 for i in xrange(output.shape[1]):
  print i
  for j in xrange(output.shape[2]):
@@ -50,8 +53,11 @@ for i in xrange(output.shape[1]):
   tmp = 0
   for k in xrange(np.sum(mask)):
    output[tmp:tmp+samples[k],i,j] = draws[args[k],0:samples[k]]
-   tmp = tmp + samples[k]
-print np.sum(output == 0.0)
+   tmp = tmp + samples[k]'''
+tic = time.time()
+output = propr_tools.assign_draws(probs,argsort,draws)
+toc = time.time()
+print toc - tic
 output = np.sort(output,axis=0)
 
 #Construct the distributions
