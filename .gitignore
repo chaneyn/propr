@@ -1,0 +1,3 @@
+build
+libraries/propr_tools_fortran.so
+src/propr_tools_fortran.so.dSYM
