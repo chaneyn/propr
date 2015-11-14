@@ -10,8 +10,8 @@ def initialize_netcdf_output(instance):
  ld = instance.fp_properties.variables['lower_depth'][:]
  fp = nc.Dataset(instance.metadata['output_file'],'w')
  fp.createDimension('z',instance.nl)
- fp.createDimension('x',instance.prob.shape[2])
- fp.createDimension('y',instance.prob.shape[1])
+ fp.createDimension('x',instance.nx)
+ fp.createDimension('y',instance.ny)
  x = fp.createVariable('x','f8',('x',))
  x.Axis = 'X'
  x[:] = instance.x
@@ -26,29 +26,36 @@ def initialize_netcdf_output(instance):
  z = fp.createVariable('lower_depth','f8',('z',))
  z[:] = ld
 
+ #Create the variables for the maps
+ vars = instance.fp_properties.groups.keys()
+ for var in vars:
+
+  #Create new variables
+  fp.createVariable('%s_pc5' % var,'f4',('z','y','x'))
+  fp.createVariable('%s_pc95' % var,'f4',('z','y','x'))
+  fp.createVariable('%s_mean' % var,'f4',('z','y','x'))
+
  return fp
 
-def run(file):
+def calculate_properties_on_each_block(instance,fp,ix,iy):
 
- #Initialize the propr class
- instance = initialize(file)
-
- #Initialize the output file
- print "Initializing output file"
- fp = initialize_netcdf_output(instance)
-
+ #Define the arrays
+ instance.prob = instance.fp_probabilities.variables[instance.metadata['vm']['prob']][:,iy,ix]
+ instance.rank = instance.fp_probabilities.variables[instance.metadata['vm']['rank']][:,iy,ix]
+ 
  #Create the input data for a variable for each layer
  vars = instance.fp_properties.groups.keys()
  for var in vars:
 
   print "Calculating %s maps" % var
-  #Create new variables
-  vpc5 = fp.createVariable('%s_pc5' % var,'f4',('z','y','x'))
-  vpc95 = fp.createVariable('%s_pc95' % var,'f4',('z','y','x'))
-  vmean = fp.createVariable('%s_mean' % var,'f4',('z','y','x'))
+  #Retrieve the variables
+  vpc5 = fp.variables['%s_pc5' % var]
+  vpc95 = fp.variables['%s_pc95' % var]
+  vmean = fp.variables['%s_mean' % var]
 
   #Iterate through each layer
   for il in xrange(instance.nl):
+
    #Define the soil property data
    data = {}
    data['id'] = instance.fp_properties.variables['soil_classes'][:]
@@ -60,9 +67,35 @@ def run(file):
    output = instance.calculate_properties(data)
 
    #Output the properties
-   vpc5[il,:,:] = output['pc5']
-   vpc95[il,:,:] = output['pc95']
-   vmean[il,:,:] = output['mean']
+   vpc5[il,iy,ix] = output['pc5']
+   vpc95[il,iy,ix] = output['pc95']
+   vmean[il,iy,ix] = output['mean']
+
+ return
+
+def run(file):
+
+ #Initialize the propr class
+ instance = initialize(file)
+
+ #Initialize the output file
+ print "Initializing output file"
+ fp = initialize_netcdf_output(instance)
+
+ #Iterate per block
+ n = instance.metadata['nblocks']+1
+ xbounds = np.ceil(np.linspace(instance.ix[0],instance.ix[-1],n)).astype(np.int32)
+ ybounds = np.ceil(np.linspace(instance.iy[0],instance.iy[-1],n)).astype(np.int32)
+
+ iblock = 0
+ for i in xrange(len(xbounds)-1):
+  ix = np.arange(xbounds[i],xbounds[i+1]+1)
+  for j in xrange(len(ybounds)-1):
+   iy = np.arange(xbounds[j],ybounds[j+1]+1)
+   iblock = iblock + 1
+   print "Working on block %d/%d" % (iblock,(n-1)*(n-1))
+   #Calculate the properties for this block
+   calculate_properties_on_each_block(instance,fp,ix,iy)
 
  #Finalize netcdf file
  print "Finalizing output file"
@@ -83,11 +116,13 @@ class initialize:
   self.fp_properties = nc.Dataset(self.metadata['properties_file'])
   self.fp_probabilities = nc.Dataset(self.metadata['input_file'])
 
-  #Read the probabilities
-  self.prob = self.fp_probabilities.variables['prob'][:]
-  self.rank = self.fp_probabilities.variables['rank'][:]
-  self.x = self.fp_probabilities.variables['x'][:]
-  self.y = self.fp_probabilities.variables['y'][:]
+  #Read some metadata
+  self.x = self.fp_probabilities.variables[self.metadata['vm']['x']][:]
+  self.y = self.fp_probabilities.variables[self.metadata['vm']['y']][:]
+  self.nx = len(self.x)
+  self.ny = len(self.y)
+  self.ix = np.arange(self.nx)
+  self.iy = np.arange(self.ny)
   self.nl = len(self.fp_properties.variables['upper_depth'][:])
 
   return
@@ -95,6 +130,7 @@ class initialize:
  #Draw data per soil class
  def draw_from_distribution(self,data):
  
+  np.random.seed(self.metadata['seed'])
   nc = len(data['id'])
   nd = self.metadata['nd']
   draws = np.zeros((nc,nd)).astype(np.float32)
