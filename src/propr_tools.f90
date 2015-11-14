@@ -1,9 +1,9 @@
-subroutine assign_draws(probs,argsort,draws,output,nx,ny,nd,nc)
+subroutine assign_draws(probs,argsort,draws,mapping,output,nx,ny,nd,nc,nc_all,nm)
 
  implicit none
- integer,intent(in) :: nx,ny,nd,nc
- integer,intent(in) :: argsort(nc,nx,ny)
- real,intent(in) :: probs(nc,nx,ny),draws(nc,nd)
+ integer,intent(in) :: nx,ny,nd,nc,nc_all,nm
+ integer,intent(in) :: argsort(nc,nx,ny),mapping(nm)
+ real,intent(in) :: probs(nc,nx,ny),draws(nc_all,nd)
  real,intent(out) :: output(nd,nx,ny)
  integer :: i,j,k,l,samples(nc),tmp,args(nc)
  real :: dif
@@ -25,9 +25,9 @@ subroutine assign_draws(probs,argsort,draws,output,nx,ny,nd,nc)
    args = argsort(:,i,j) + 1 !Convert from python to fortran
    tmp = 1
    do k=1,nc
-    if (samples(k) .eq. 0)exit !THIS COULD BE A PROBLEM IF SAMPLES(K) = 1
-    do l=tmp,tmp+samples(k)
-     output(l,i,j) = draws(args(k),l-tmp+1)
+    if (samples(k) .le. 0)cycle
+    do l=tmp,tmp+samples(k)-1
+     output(l,i,j) = draws(mapping(args(k))+1,l-tmp+1)
     enddo
     tmp = tmp + samples(k)
    enddo

@@ -3,6 +3,7 @@ import json
 import netCDF4 as nc
 import numpy as np
 import scipy.stats as stats
+import matplotlib.pyplot as plt
 
 def initialize_netcdf_output(instance):
 
@@ -20,11 +21,11 @@ def initialize_netcdf_output(instance):
  y[:] = instance.y
  z = fp.createVariable('z','f8',('z',))
  z.Axis = 'Z'
- z[:] = (ud + ld)/2
+ z[:] = (ud[0:instance.nl] + ld[0:instance.nl])/2
  z = fp.createVariable('upper_depth','f8',('z',))
- z[:] = ud
+ z[:] = ud[0:instance.nl]
  z = fp.createVariable('lower_depth','f8',('z',))
- z[:] = ld
+ z[:] = ld[0:instance.nl]
 
  #Create the variables for the maps
  vars = instance.fp_properties.groups.keys()
@@ -40,8 +41,13 @@ def initialize_netcdf_output(instance):
 def calculate_properties_on_each_block(instance,fp,ix,iy):
 
  #Define the arrays
- instance.prob = instance.fp_probabilities.variables[instance.metadata['vm']['prob']][:,iy,ix]
- instance.rank = instance.fp_probabilities.variables[instance.metadata['vm']['rank']][:,iy,ix]
+ mr = instance.metadata['maxrank']
+ instance.prob = instance.fp_probabilities.variables[instance.metadata['vm']['prob']][0:mr,iy,ix]
+ instance.prob = instance.metadata["vm"]["prob_scalar_multiplier"]*instance.prob
+ instance.rank = instance.fp_probabilities.variables[instance.metadata['vm']['rank']][0:mr,iy,ix]
+
+ #Curate the probabilities (always needs to sum to 100)
+ instance.prob = instance.prob/np.sum(instance.prob,axis=0)
  
  #Create the input data for a variable for each layer
  vars = instance.fp_properties.groups.keys()
@@ -124,33 +130,40 @@ class initialize:
   self.ix = np.arange(self.nx)
   self.iy = np.arange(self.ny)
   self.nl = len(self.fp_properties.variables['upper_depth'][:])
+  if self.nl > self.metadata['maxnl']:self.nl = self.metadata['maxnl']
 
   return
 
  #Draw data per soil class
  def draw_from_distribution(self,data):
  
-  np.random.seed(self.metadata['seed'])
-  nc = len(data['id'])
+  ids = np.ma.getdata(np.unique(self.rank))
+  ids = ids[ids >= 0]
+  nc = len(ids)#len(data['id'])
   nd = self.metadata['nd']
   draws = np.zeros((nc,nd)).astype(np.float32)
-  for ic in data['id']:
-   loc = data['min'][ic]
-   scale = data['max'][ic]-data['min'][ic]
-   mode = (data['mode'][ic] - data['min'][ic])/(data['max'][ic] - data['min'][ic])
+  mapping = np.zeros(np.max(data['id'])+1).astype(np.int32)
+  ic = 0
+  for id in ids:
+   loc = data['min'][id]
+   scale = data['max'][id]-data['min'][id]
+   mode = (data['mode'][id] - data['min'][id])/(data['max'][id] - data['min'][id])
+   np.random.seed(self.metadata['seed'])
    tmp = stats.triang.rvs(mode,loc=loc,scale=scale,size=nd)
    draws[ic,:] = tmp
+   mapping[id] = ic
+   ic += 1
 
-  return draws
+  return (draws,mapping)
 
  #Calculate the mapped properties
  def calculate_properties(self,data):
 
   #Create the array of draws
-  draws = self.draw_from_distribution(data)
+  (draws,mapping) = self.draw_from_distribution(data)
 
   #Create the array of draws
-  array = propr_tools_fortran.assign_draws(self.prob,self.rank,draws)
+  array = propr_tools_fortran.assign_draws(self.prob,self.rank,draws,mapping)
 
   #Sort the data
   array = np.sort(array,axis=0)
