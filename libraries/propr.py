@@ -64,7 +64,7 @@ def calculate_properties_on_each_block(instance,fp,ix,iy):
 
    #Define the soil property data
    data = {}
-   data['id'] = instance.fp_properties.variables['soil_classes'][:]
+   data['id'] = instance.fp_properties.variables['id'][:]
    data['min'] = instance.fp_properties.groups[var].variables['min'][:,il]
    data['max'] = instance.fp_properties.groups[var].variables['max'][:,il]
    data['mode'] = instance.fp_properties.groups[var].variables['mode'][:,il]
@@ -145,13 +145,20 @@ class initialize:
   mapping = np.zeros(np.max(data['id'])+1).astype(np.int32)
   ic = 0
   for id in ids:
-   loc = data['min'][id]
-   scale = data['max'][id]-data['min'][id]
-   mode = (data['mode'][id] - data['min'][id])/(data['max'][id] - data['min'][id])
-   np.random.seed(self.metadata['seed'])
-   tmp = stats.triang.rvs(mode,loc=loc,scale=scale,size=nd)
-   draws[ic,:] = tmp
-   mapping[id] = ic
+   if data['mode'][id] == -9999:
+     draws[ic,:] = -9999
+     mapping[id] = ic
+   elif data['max'][id] == data['min'][id]:
+     draws[ic,:] = data['mode'][id]
+     mapping[id] = ic
+   else:
+    loc = data['min'][id]
+    scale = data['max'][id]-data['min'][id]
+    mode = (data['mode'][id] - data['min'][id])/(data['max'][id] - data['min'][id])
+    np.random.seed(self.metadata['seed'])
+    tmp = stats.triang.rvs(mode,loc=loc,scale=scale,size=nd)
+    draws[ic,:] = tmp
+    mapping[id] = ic
    ic += 1
 
   return (draws,mapping)
