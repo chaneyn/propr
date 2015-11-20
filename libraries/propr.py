@@ -28,7 +28,8 @@ def initialize_netcdf_output(instance):
  z[:] = ld[0:instance.nl]
 
  #Create the variables for the maps
- vars = instance.fp_properties.groups.keys()
+ #vars = instance.fp_properties.groups.keys()
+ vars = instance.metadata['vars']
  for var in vars:
 
   #Create new variables
@@ -50,7 +51,8 @@ def calculate_properties_on_each_block(instance,fp,ix,iy):
  instance.prob = instance.prob/np.sum(instance.prob,axis=0)
  
  #Create the input data for a variable for each layer
- vars = instance.fp_properties.groups.keys()
+ #vars = instance.fp_properties.groups.keys()
+ vars = instance.metadata['vars']
  for var in vars:
 
   print "Calculating %s maps" % var
@@ -170,7 +172,8 @@ class initialize:
   (draws,mapping) = self.draw_from_distribution(data)
 
   #Create the array of draws
-  array = propr_tools_fortran.assign_draws(self.prob,self.rank,draws,mapping)
+  ncmax = self.metadata['ncmax']
+  array = propr_tools_fortran.assign_draws(self.prob,self.rank,draws,mapping,ncmax)
 
   #Sort the data
   array = np.sort(array,axis=0)

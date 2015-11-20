@@ -1,11 +1,11 @@
-subroutine assign_draws(probs,argsort,draws,mapping,output,nx,ny,nd,nc,nc_all,nm)
+subroutine assign_draws(probs,argsort,draws,mapping,output,ncmax,nx,ny,nd,nc,nc_all,nm)
 
  implicit none
- integer,intent(in) :: nx,ny,nd,nc,nc_all,nm
+ integer,intent(in) :: nx,ny,nd,nc,nc_all,nm,ncmax
  integer,intent(in) :: argsort(nc,nx,ny),mapping(nm)
  real,intent(in) :: probs(nc,nx,ny),draws(nc_all,nd)
  real,intent(out) :: output(nd,nx,ny)
- integer :: i,j,k,l,samples(nc),tmp,args(nc)
+ integer :: i,j,k,l,samples(nc),tmp,args(nc),count
  real :: dif,probs_cell(nc),undef
  output = 0.0
  samples = 0
@@ -13,15 +13,20 @@ subroutine assign_draws(probs,argsort,draws,mapping,output,nx,ny,nd,nc,nc_all,nm
 
  do i=1,nx
   do j=1,ny
-   probs_cell = probs(:,i,j)
+   probs_cell = 0.0
    !Clean up the probabilities (If we don't have an estimate then it makes no
    !sense to use it...)
    args = argsort(:,i,j) + 1
+   count = 0
    do k=1,nc
+    probs_cell(k) = probs(k,i,j)
     if (args(k) .lt. 0)cycle
     if (draws(mapping(args(k))+1,1) .eq. -9999)then
      probs_cell(k) = 0.0
+    else 
+     count = count + 1
     endif
+    if (count .eq. ncmax)exit
    enddo
    !Set to undef if the sum of probabilities is now 0....
    if (sum(probs_cell) .eq. 0.0)then
