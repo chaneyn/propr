@@ -1,0 +1,16 @@
+{
+  "input_file": "data/input.nc",
+  "output_file": "data/output.nc",
+  "properties_file": "workspace/properties.nc",
+  "nd": 100,
+  "vm":{"rank":"rank",
+        "prob":"prob",
+        "prob_scalar_multiplier":1.0,
+        "x":"x","y":"y"},
+  "seed": 2,
+  "nblocks": 4,
+  "maxnl": 1,
+  "vars":["ph"],
+  "ncmax":100,
+  "maxrank":100
+}
