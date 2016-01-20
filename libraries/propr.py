@@ -3,7 +3,6 @@ import json
 import netCDF4 as nc
 import numpy as np
 import scipy.stats as stats
-import matplotlib.pyplot as plt
 
 def initialize_netcdf_output(instance):
 
