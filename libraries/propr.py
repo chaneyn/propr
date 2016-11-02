@@ -3,6 +3,8 @@ import json
 import netCDF4 as nc
 import numpy as np
 import scipy.stats as stats
+import warnings
+warnings.filterwarnings("ignore")
 
 def initialize_netcdf_output(instance):
 
@@ -146,12 +148,17 @@ class initialize:
   mapping = np.zeros(np.max(data['id'])+1).astype(np.int32)
   ic = 0
   for id in ids:
+   rel_min = 100*np.abs((data['mode'][id] - data['min'][id])/data['mode'][id])
+   rel_max = 100*np.abs((data['mode'][id] - data['max'][id])/data['mode'][id])
    if data['mode'][id] == -9999:
-     draws[ic,:] = -9999
-     mapping[id] = ic
+    draws[ic,:] = -9999
+    mapping[id] = ic
    elif data['max'][id] == data['min'][id]:
-     draws[ic,:] = data['mode'][id]
-     mapping[id] = ic
+    draws[ic,:] = data['mode'][id]
+    mapping[id] = ic
+   elif((rel_min < 0.01) & (rel_max < 0.01)):
+    draws[ic,:] = data['mode'][id]
+    mapping[id] = ic
    else:
     loc = data['min'][id]
     scale = data['max'][id]-data['min'][id]
