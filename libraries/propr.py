@@ -3,6 +3,7 @@ import json
 import netCDF4 as nc
 import numpy as np
 import scipy.stats as stats
+import time
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -29,14 +30,17 @@ def initialize_netcdf_output(instance):
  z[:] = ld[0:instance.nl]
 
  #Create the variables for the maps
- #vars = instance.fp_properties.groups.keys()
- vars = instance.metadata['vars']
- for var in vars:
-
+ for var in instance.metadata['vars']:
   #Create new variables
-  fp.createVariable('%s_pc5' % var,'f4',('z','y','x'))
-  fp.createVariable('%s_pc95' % var,'f4',('z','y','x'))
-  fp.createVariable('%s_mean' % var,'f4',('z','y','x'))
+  shape = instance.variables[var]
+  if len(shape) == 2:
+   fp.createVariable('%s_pc5' % var,'f4',('z','y','x'))
+   fp.createVariable('%s_pc95' % var,'f4',('z','y','x'))
+   fp.createVariable('%s_mean' % var,'f4',('z','y','x'))
+  else:
+   fp.createVariable('%s_pc5' % var,'f4',('y','x'))
+   fp.createVariable('%s_pc95' % var,'f4',('y','x'))
+   fp.createVariable('%s_mean' % var,'f4',('y','x'))
 
  return fp
 
@@ -61,24 +65,47 @@ def calculate_properties_on_each_block(instance,fp,ix,iy):
   vpc5 = fp.variables['%s_pc5' % var]
   vpc95 = fp.variables['%s_pc95' % var]
   vmean = fp.variables['%s_mean' % var]
+ 
+  if len(instance.variables[var]) == 2:
 
-  #Iterate through each layer
-  for il in xrange(instance.nl):
+   #Iterate through each layer
+   for il in xrange(instance.nl):
 
-   #Define the soil property data
-   data = {}
-   data['id'] = instance.fp_properties.variables['id'][:]
-   data['min'] = instance.fp_properties.groups[var].variables['min'][:,il]
-   data['max'] = instance.fp_properties.groups[var].variables['max'][:,il]
-   data['mode'] = instance.fp_properties.groups[var].variables['mode'][:,il]
+    #Define the soil property data
+    data = {}
+    data['id'] = instance.fp_properties.variables['id'][:]
+    data['min'] = instance.fp_properties.groups[var].variables['min'][:,il]
+    data['max'] = instance.fp_properties.groups[var].variables['max'][:,il]
+    data['mean'] = instance.fp_properties.groups[var].variables['mean'][:,il]
+    data['alpha'] = instance.fp_properties.groups[var].variables['alpha'][:,il]
+    data['beta'] = instance.fp_properties.groups[var].variables['beta'][:,il]
 
-   #Calculate the properties
-   output = instance.calculate_properties(data)
+    #Calculate the properties
+    output = instance.calculate_properties(data)
 
-   #Output the properties
-   vpc5[il,iy,ix] = output['pc5']
-   vpc95[il,iy,ix] = output['pc95']
-   vmean[il,iy,ix] = output['mean']
+    #Output the properties
+    vpc5[il,iy,ix] = output['pc5']
+    vpc95[il,iy,ix] = output['pc95']
+    vmean[il,iy,ix] = output['mean']
+
+  else:
+
+    #Define the soil property data
+    data = {}
+    data['id'] = instance.fp_properties.variables['id'][:]
+    data['min'] = instance.fp_properties.groups[var].variables['min'][:]
+    data['max'] = instance.fp_properties.groups[var].variables['max'][:]
+    data['mean'] = instance.fp_properties.groups[var].variables['mean'][:]
+    data['alpha'] = instance.fp_properties.groups[var].variables['alpha'][:]
+    data['beta'] = instance.fp_properties.groups[var].variables['beta'][:]
+
+    #Calculate the properties
+    output = instance.calculate_properties(data)
+
+    #Output the properties
+    vpc5[iy,ix] = output['pc5']
+    vpc95[iy,ix] = output['pc95']
+    vmean[iy,ix] = output['mean']
 
  return
 
@@ -135,6 +162,11 @@ class initialize:
   self.nl = len(self.fp_properties.variables['upper_depth'][:])
   if self.nl > self.metadata['maxnl']:self.nl = self.metadata['maxnl']
 
+  #Construct the shapes of all the input variables
+  self.variables = {}
+  for var in self.metadata['vars']:
+   self.variables[var] = {'shape':self.fp_properties[var]['mean'].shape,}
+
   return
 
  #Draw data per soil class
@@ -146,26 +178,28 @@ class initialize:
   nd = self.metadata['nd']
   draws = np.zeros((nc,nd)).astype(np.float32)
   mapping = np.zeros(np.max(data['id'])+1).astype(np.int32)
+  mids = list(data['id'])
   ic = 0
   for id in ids:
-   rel_min = 100*np.abs((data['mode'][id] - data['min'][id])/data['mode'][id])
-   rel_max = 100*np.abs((data['mode'][id] - data['max'][id])/data['mode'][id])
-   if data['mode'][id] == -9999:
-    draws[ic,:] = -9999
-    mapping[id] = ic
-   elif data['max'][id] == data['min'][id]:
-    draws[ic,:] = data['mode'][id]
-    mapping[id] = ic
-   elif((rel_min < 0.01) & (rel_max < 0.01)):
-    draws[ic,:] = data['mode'][id]
-    mapping[id] = ic
+   #Find index of id
+   if id in mids:
+    idx = mids.index(id)
+    if data['mean'][idx] == -9999:
+     draws[ic,:] = -9999
+     mapping[id] = ic
+    else:
+     alpha = data['alpha'][idx]
+     beta = data['beta'][idx]
+     min = data['min'][idx]
+     max = data['max'][idx]
+     #draw from beta distribution
+     tmp = np.random.beta(alpha,beta,(nd,))
+     #rescale using min and max
+     tmp = tmp*(max - min) + min
+     draws[ic,:] = tmp
+     mapping[id] = ic
    else:
-    loc = data['min'][id]
-    scale = data['max'][id]-data['min'][id]
-    mode = (data['mode'][id] - data['min'][id])/(data['max'][id] - data['min'][id])
-    np.random.seed(self.metadata['seed'])
-    tmp = stats.triang.rvs(mode,loc=loc,scale=scale,size=nd)
-    draws[ic,:] = tmp
+    draws[ic,:] = -9999
     mapping[id] = ic
    ic += 1
 
@@ -175,11 +209,15 @@ class initialize:
  def calculate_properties(self,data):
 
   #Create the array of draws
+  t0 = time.time()
   (draws,mapping) = self.draw_from_distribution(data)
+  print 'sampling',time.time() - t0
 
   #Create the array of draws
+  t0 = time.time()
   ncmax = self.metadata['ncmax']
   array = propr_tools_fortran.assign_draws(self.prob,self.rank,draws,mapping,ncmax)
+  print 'placing data',time.time() - t0
 
   #Sort the data
   array = np.sort(array,axis=0)
