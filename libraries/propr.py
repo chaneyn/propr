@@ -250,21 +250,22 @@ class initialize:
   t0 = time.time()
   ncmax = self.metadata['ncmax']
   #array = self.array
-  array = propr_tools_fortran.assign_draws(self.prob,self.rank,draws,mapping,ncmax)
+  #(array,newmin,newmax,newmean,newalpha,newbeta) = propr_tools_fortran.assign_draws(self.prob,self.rank,draws,mapping,ncmax)
+  (min,max,mean,alpha,beta) = propr_tools_fortran.assign_draws(self.prob,self.rank,draws,mapping,ncmax)
   #print 'placing data',time.time() - t0
 
   #Compute the beta parameters
-  t0 = time.time()
-  min = np.min(array,axis=0)
-  max = np.max(array,axis=0)
-  mean = np.mean(array,axis=0)
+  #t0 = time.time()
+  #min = np.min(array,axis=0)
+  #max = np.max(array,axis=0)
+  #mean = np.mean(array,axis=0)
   #narray = (array - min[np.newaxis,:,:])/(max[np.newaxis,:,:]-min[np.newaxis,:,:])
-  narray = (array - min)/(max-min)
-  nmean = np.mean(narray,axis=(0,))
-  nvar = np.var(narray,axis=(0,))
-  alpha = ((1-nmean)/nvar - (1/nmean))*nmean**2
-  beta = alpha*(1/nmean - 1)
-  #print 'creating beta parameters',time.time() - t0
+  #narray = (array - min)/(max-min)
+  #nmean = np.mean(narray,axis=(0,))
+  #nvar = np.var(narray,axis=(0,))
+  #alpha = ((1-nmean)/nvar - (1/nmean))*nmean**2
+  #beta = alpha*(1/nmean - 1)
+  print 'creating beta parameters',time.time() - t0
   
   #Assemble output
   output = {}
