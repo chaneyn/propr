@@ -222,18 +222,19 @@ class initialize:
   #Determine the classes that have information
   m = idx & (data['mean'] != undef)
   #Draw from beta distribution
-  #tmp = np.random.beta(data['alpha'][m],data['beta'][m],(nd,np.sum(m))) THIS CREATES BOUNDARIES
-  tmp = []
-  for i in xrange(np.sum(m)):
-   #Define the random seed
-   rnd = np.random.RandomState(self.metadata['seed'])
-   tmp.append(rnd.beta(data['alpha'][m][i],data['beta'][m][i],(nd,)))
-  tmp = np.array(tmp).T
-  #Rescale using min and max
-  tmp = tmp*(data['max'][m] - data['min'][m]) + data['min'][m]
-  #Place the samples in the draws array
-  m = np.in1d(ids,mids[m])
-  draws[m,:] = tmp.T
+  if np.sum(m) > 0:
+   #tmp = np.random.beta(data['alpha'][m],data['beta'][m],(nd,np.sum(m))) THIS CREATES BOUNDARIES
+   tmp = []
+   for i in xrange(np.sum(m)):
+    #Define the random seed
+    rnd = np.random.RandomState(self.metadata['seed'])
+    tmp.append(rnd.beta(data['alpha'][m][i],data['beta'][m][i],(nd,)))
+   tmp = np.array(tmp).T
+   #Rescale using min and max
+   tmp = tmp*(data['max'][m] - data['min'][m]) + data['min'][m]
+   #Place the samples in the draws array
+   m = np.in1d(ids,mids[m])
+   draws[m,:] = tmp.T
   
   return (draws,mapping)
 
