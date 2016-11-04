@@ -265,7 +265,7 @@ class initialize:
   #nvar = np.var(narray,axis=(0,))
   #alpha = ((1-nmean)/nvar - (1/nmean))*nmean**2
   #beta = alpha*(1/nmean - 1)
-  print 'creating beta parameters',time.time() - t0
+  #print 'creating beta parameters',time.time() - t0
   
   #Assemble output
   output = {}
