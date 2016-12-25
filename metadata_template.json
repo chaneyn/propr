@@ -2,7 +2,7 @@
   "input_file": "data/input.nc",
   "output_file": "data/output.nc",
   "properties_file": "workspace/properties.nc",
-  "nd": 100,
+  "nd": 10,
   "vm":{"rank":"rank",
         "prob":"prob",
         "prob_scalar_multiplier":1.0,

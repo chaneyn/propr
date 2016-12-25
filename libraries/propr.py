@@ -43,14 +43,16 @@ def initialize_netcdf_output(instance,nx,ny):
    grp.createVariable('min','f4',('z','y','x'),chunksizes=(1,ny,nx))
    grp.createVariable('alpha','f4',('z','y','x'),chunksizes=(1,ny,nx))
    grp.createVariable('beta','f4',('z','y','x'),chunksizes=(1,ny,nx))
+   grp.createVariable('var','f4',('z','y','x'),chunksizes=(1,ny,nx))
   else:
    grp.createVariable('mean','f4',('y','x'),chunksizes=(ny,nx))
    grp.createVariable('max','f4',('y','x'),chunksizes=(ny,nx))
    grp.createVariable('min','f4',('y','x'),chunksizes=(ny,nx))
    grp.createVariable('alpha','f4',('y','x'),chunksizes=(ny,nx))
    grp.createVariable('beta','f4',('y','x'),chunksizes=(ny,nx))
+   grp.createVariable('var','f4',('y','x'),chunksizes=(ny,nx))
   #Initialize to undef
-  stats = ['mean','min','max','alpha','beta']
+  stats = ['mean','min','max','alpha','beta','var']
   #for stat in stats:
   # grp[stat][:] = undef
 
@@ -73,10 +75,10 @@ def calculate_properties_on_each_block(instance,fp,ix,iy,iblock):
   for var in instance.metadata['vars']:
    if len(instance.variables[var]['shape']) == 2:
     for il in xrange(instance.nl):
-     for stat in ['mean','min','max','alpha','beta']:
+     for stat in ['mean','min','max','alpha','beta','var']:
        fp[var][stat][il,iy,ix] = undef
    else:
-     for stat in ['mean','min','max','alpha','beta']:
+     for stat in ['mean','min','max','alpha','beta','var']:
        fp[var][stat][iy,ix] = undef
   return
 
@@ -105,6 +107,7 @@ def calculate_properties_on_each_block(instance,fp,ix,iy,iblock):
     data['mean'] = instance.fp_properties.groups[var].variables['mean'][:,il]
     data['alpha'] = instance.fp_properties.groups[var].variables['alpha'][:,il]
     data['beta'] = instance.fp_properties.groups[var].variables['beta'][:,il]
+    data['var'] = instance.fp_properties.groups[var].variables['var'][:,il]
 
     #Calculate the properties
     output = instance.calculate_properties(data)
@@ -123,6 +126,7 @@ def calculate_properties_on_each_block(instance,fp,ix,iy,iblock):
     data['mean'] = instance.fp_properties.groups[var].variables['mean'][:]
     data['alpha'] = instance.fp_properties.groups[var].variables['alpha'][:]
     data['beta'] = instance.fp_properties.groups[var].variables['beta'][:]
+    data['var'] = instance.fp_properties.groups[var].variables['var'][:]
 
     #Calculate the properties
     output = instance.calculate_properties(data)
@@ -201,7 +205,7 @@ class initialize:
   return
 
  #Draw data per soil class
- def draw_from_distribution(self,data):
+ def extract_parameters(self,data):
  
   #Define parameters
   undef = -9999
@@ -210,61 +214,50 @@ class initialize:
   nc = len(ids)#len(data['id'])
   nd = self.metadata['nd']
   mids = data['id']
-  #Construct an array of undefined draws
-  draws = np.zeros((nc,nd)).astype(np.float32)
-  draws[:] = undef
   #Construct mapping array
-  #mapping = np.zeros(np.max(data['id'])+1).astype(np.int32)
   mapping = np.zeros(np.max(ids)+1).astype(np.int32)
   mapping[ids] = np.arange(nc)
   #Compute the index in the data
   idx = np.in1d(mids,ids)
-  #Determine the classes that have information
-  m = idx & (data['mean'] != undef)
-  #Draw from beta distribution
-  if np.sum(m) > 0:
-   #tmp = np.random.beta(data['alpha'][m],data['beta'][m],(nd,np.sum(m))) THIS CREATES BOUNDARIES
-   tmp = []
-   for i in xrange(np.sum(m)):
-    #Define the random seed
-    rnd = np.random.RandomState(self.metadata['seed'])
-    tmp.append(rnd.beta(data['alpha'][m][i],data['beta'][m][i],(nd,)))
-   tmp = np.array(tmp).T
-   #Rescale using min and max
-   tmp = tmp*(data['max'][m] - data['min'][m]) + data['min'][m]
-   #Place the samples in the draws array
-   m = np.in1d(ids,mids[m])
-   draws[m,:] = tmp.T
+  #Construct parameters
+  m0 = idx & (data['mean'] != undef)
+  m1 = np.in1d(ids,mids[m0])
+  #max
+  max = np.zeros(nc)
+  max[:] = undef
+  max[m1] = data['max'][m0]
+  #min
+  min = np.zeros(nc)
+  min[:] = undef
+  min[m1] = data['min'][m0]
+  #mean
+  mean = np.zeros(nc)
+  mean[:] = undef
+  mean[m1] = data['mean'][m0]
+  #var
+  var = np.zeros(nc)
+  var[:] = undef
+  var[m1] = data['var'][m0]
+  #place all the parameters together
+  params = {'min':min,'max':max,'mean':mean,'var':var}
   
-  return (draws,mapping)
+  return (mapping,params)
 
  #Calculate the mapped properties
  def calculate_properties(self,data):
 
-  #Create the array of draws
-  t0 = time.time()
-  (draws,mapping) = self.draw_from_distribution(data)
-  #print 'sampling',time.time() - t0
+  #Extract the parameters
+  (mapping,params) = self.extract_parameters(data)
 
-  #Create the array of draws
-  t0 = time.time()
+  #Calculate the beta parameters
+  max_in = params['max']
   ncmax = self.metadata['ncmax']
-  #array = self.array
-  #(array,newmin,newmax,newmean,newalpha,newbeta) = propr_tools_fortran.assign_draws(self.prob,self.rank,draws,mapping,ncmax)
-  (min,max,mean,alpha,beta) = propr_tools_fortran.assign_draws(self.prob,self.rank,draws,mapping,ncmax)
-  #print 'placing data',time.time() - t0
-
-  #Compute the beta parameters
-  #t0 = time.time()
-  #min = np.min(array,axis=0)
-  #max = np.max(array,axis=0)
-  #mean = np.mean(array,axis=0)
-  #narray = (array - min[np.newaxis,:,:])/(max[np.newaxis,:,:]-min[np.newaxis,:,:])
-  #narray = (array - min)/(max-min)
-  #nmean = np.mean(narray,axis=(0,))
-  #nvar = np.var(narray,axis=(0,))
-  #alpha = ((1-nmean)/nvar - (1/nmean))*nmean**2
-  #beta = alpha*(1/nmean - 1)
+  min_in = params['min']
+  mean_in = params['mean']
+  var_in = params['var']
+  t0 = time.time() 
+  (min,max,mean,var,alpha,beta) = propr_tools_fortran.compute_parameters(max_in,min_in,mean_in,var_in,
+                        self.prob,self.rank,mapping,ncmax)
   #print 'creating beta parameters',time.time() - t0
   
   #Assemble output
@@ -274,6 +267,7 @@ class initialize:
   output['max'] = max
   output['alpha'] = alpha
   output['beta'] = beta
+  output['var'] = var
 
   return output
 
