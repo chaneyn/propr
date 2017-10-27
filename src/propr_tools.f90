@@ -223,3 +223,79 @@ subroutine compute_parameters(max_in,min_in,mean_in,var_in,&
  enddo
 
 end subroutine
+
+subroutine compute_parameters_point(max_in,min_in,mean_in,var_in,&
+                        probs,argsort,mapping,minimum,maximum,mean,var,&
+                        alpha,beta,ncmax,np,nc,nc_all,nm)
+
+ implicit none
+ integer,intent(in) :: np,nc,nc_all,nm,ncmax
+ integer,intent(in) :: argsort(nc,np),mapping(nm)
+ real,intent(in) :: probs(nc,np),max_in(nc_all),min_in(nc_all),mean_in(nc_all),var_in(nc_all)
+ real,intent(out) :: minimum(np),maximum(np),mean(np),alpha(np),beta(np),var(np)
+ integer :: i,j,k,l,samples(nc),args(nc),count
+ real :: probs_cell(nc),undef
+ real :: var_cell(nc),mean_cell(nc),min_cell(nc),max_cell(nc)
+ real :: nmean,nvar
+ undef = -9999.0
+ minimum = undef
+ maximum = undef
+ mean = undef
+ alpha = undef
+ beta = undef
+ var = undef
+
+ do i=1,np
+   !Initialize array
+   probs_cell = 0.0
+   !Clean up the probabilities (If we don't have an estimate then it makes no
+   !sense to use it...)
+   args = argsort(:,i) + 1
+   count = 0
+   do k=1,nc
+    if (args(k) .lt. 0)cycle
+    if (mean_in(mapping(args(k))+1) .eq. -9999)then
+     probs_cell(k) = 0.0
+    else 
+     probs_cell(k) = probs(k,i)
+     count = count + 1
+    endif
+    if (count .eq. ncmax)exit
+   enddo
+   !Set to undef if the sum of probabilities is now 0....
+   if (sum(probs_cell) .eq. 0.0)then
+     maximum(i) = undef
+     minimum(i) = undef
+     var(i) = undef
+     mean(i) = undef
+     alpha(i) = undef
+     beta(i) = undef
+   else
+     !Assemble the parameters
+     min_cell = undef
+     max_cell = undef 
+     mean_cell = undef
+     var_cell = undef
+     do k=1,nc
+      if (args(k) .lt. 0)cycle
+      min_cell(k) = min_in(mapping(args(k))+1)
+      max_cell(k) = max_in(mapping(args(k))+1)
+      mean_cell(k) = mean_in(mapping(args(k))+1)
+      var_cell(k) = var_in(mapping(args(k))+1)
+     enddo
+     probs_cell = probs_cell/sum(probs_cell)
+     !Compute the parameters
+     minimum(i) = minval(min_cell,mask=probs_cell.ne.0)
+     maximum(i) = maxval(max_cell,mask=probs_cell.ne.0)
+     mean(i) = sum(probs_cell*mean_cell)
+     var(i) = sum(probs_cell*(var_cell + mean_cell**2)) - mean(i)**2
+     !Normalize the mean and variance
+     nmean = (mean(i) - minimum(i))/(maximum(i) - minimum(i))
+     nvar = 1/(maximum(i) - minimum(i))**2*(var(i) + mean(i)**2 &
+            - 2*minimum(i)*mean(i) + minimum(i)**2) - nmean**2
+     alpha(i) = ((1-nmean)/nvar - (1/nmean))*nmean**2
+     beta(i) = alpha(i)*(1/nmean - 1)
+   endif
+ enddo
+
+end subroutine

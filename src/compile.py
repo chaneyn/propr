@@ -1,7 +1,7 @@
 import os
 os.system('rm -rf *.dSYM')
 #subroutines
-subroutines = 'assign_draws compute_parameters'
+subroutines = 'assign_draws compute_parameters compute_parameters_point'
 
 #Create library
 cmd = 'f2py -c only: %s : -m propr_tools_fortran propr_tools.f90 -lgomp --fcompiler=gnu95 --f90flags="-w -fopenmp -O3"' % subroutines
