@@ -299,3 +299,56 @@ subroutine compute_parameters_point(max_in,min_in,mean_in,var_in,&
  enddo
 
 end subroutine
+
+subroutine compute_weighted_histogram(hist,probs,argsort,mapping,whist,ncmax,nx,ny,nc,nc_all,nm,nb)
+
+ implicit none
+ integer,intent(in) :: nx,ny,nc,nc_all,nm,ncmax,nb
+ integer,intent(in) :: argsort(nc,nx,ny),mapping(nm)
+ real,intent(in) :: probs(nc,nx,ny),hist(nc_all,nb)
+ real,intent(out) :: whist(nx,ny,nb)
+ integer :: i,j,k,l,args(nc),count
+ real :: probs_cell(nc),undef
+ real :: hist_cell(nc,nb)
+ real :: nmean,nvar
+ undef = -9999.0
+ whist = undef
+
+ do i=1,nx
+  do j=1,ny
+   !Initialize array
+   probs_cell = 0.0
+   !Clean up the probabilities (If we don't have an estimate then it makes no
+   !sense to use it...)
+   args = argsort(:,i,j) + 1
+   count = 0
+   do k=1,nc
+    if (args(k) .lt. 0)cycle
+    if (hist(mapping(args(k))+1,1) .eq. -9999)then
+     probs_cell(k) = 0.0
+    else 
+     probs_cell(k) = probs(k,i,j)
+     count = count + 1
+    endif
+    if (count .eq. ncmax)exit
+   enddo
+   !Set to undef if the sum of probabilities is now 0....
+   if (sum(probs_cell) .eq. 0.0)then
+     whist(i,j,:) = undef
+   else
+     !Assemble the parameters
+     hist_cell = undef
+     do k=1,nc
+      if (args(k) .lt. 0)cycle
+      hist_cell(k,:) = hist(mapping(args(k))+1,:)
+     enddo
+     probs_cell = probs_cell/sum(probs_cell)
+     !Compute the weighted histogram
+     do l=1,nb
+      whist(i,j,l) = sum(probs_cell*hist_cell(:,l))
+     enddo
+   endif
+  enddo 
+ enddo
+
+end subroutine
