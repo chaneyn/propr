@@ -63,6 +63,8 @@ def initialize_netcdf_output_point(instance):
  fp = nc.Dataset(instance.metadata['output_file'],'w')
  fp.createDimension('z',instance.nl)
  fp.createDimension('p',instance.np)
+ fp.createDimension('b',instance.nb)
+ fp.createDimension('eb',instance.nb+1)
  lat = fp.createVariable('lat','f4',('p',))
  lat[:] = instance.fp_probabilities['lat'][:]
  lon = fp.createVariable('lon','f4',('p',))
@@ -83,13 +85,9 @@ def initialize_netcdf_output_point(instance):
   grp.description = instance.variables[var]['description']
   #Create new variables
   shape = instance.variables[var]['shape']
-  if len(shape) == 2:
-   grp.createVariable('mean','f4',('z','p'))
-   grp.createVariable('max','f4',('z','p'))
-   grp.createVariable('min','f4',('z','p'))
-   grp.createVariable('alpha','f4',('z','p'))
-   grp.createVariable('beta','f4',('z','p'))
-   grp.createVariable('var','f4',('z','p'))
+  if len(shape) == 3:
+   grp.createVariable('hist','f4',('p','z','b'))
+   grp.createVariable('ebins','f4',('eb'))
   else:
    grp.createVariable('mean','f4',('p',))
    grp.createVariable('max','f4',('p',))
@@ -213,7 +211,9 @@ def calculate_properties_point(instance,fp):
  instance.block_ids = np.ma.getdata(np.unique(instance.rank))
  
  #Curate the probabilities (always needs to sum to 100)
+ instance.prob[instance.prob == -9999] = 0
  instance.prob = instance.prob/np.sum(instance.prob,axis=0)
+ #instance.prob = instance.prob/np.sum(instance.prob,axis=0)
  
  #Create the input data for a variable for each layer
  vars = instance.metadata['vars']
@@ -222,8 +222,7 @@ def calculate_properties_point(instance,fp):
   t0 = time.time()
   #Retrieve the variables
   grp = fp[var]
- 
-  if len(instance.variables[var]['shape']) == 2:
+  if len(instance.variables[var]['shape']) == 3:
 
    #Iterate through each layer
    for il in xrange(instance.nl):
@@ -231,19 +230,19 @@ def calculate_properties_point(instance,fp):
     #Define the soil property data
     data = {}
     data['id'] = instance.fp_properties.variables['id'][:]
-    data['min'] = instance.fp_properties.groups[var].variables['min'][:,il]
-    data['max'] = instance.fp_properties.groups[var].variables['max'][:,il]
-    data['mean'] = instance.fp_properties.groups[var].variables['mean'][:,il]
-    data['alpha'] = instance.fp_properties.groups[var].variables['alpha'][:,il]
-    data['beta'] = instance.fp_properties.groups[var].variables['beta'][:,il]
-    data['var'] = instance.fp_properties.groups[var].variables['var'][:,il]
-
+    data['hist'] = instance.fp_properties.groups[var].variables['hist'][:,il,:]
+    data['bins'] = instance.fp_properties.groups[var].variables['bins'][:]
+ 
     #Calculate the properties
     output = instance.calculate_properties(data)
 
+    #Set zeros to -9999
+    m = np.sum(output['hist'],axis=1) == 0
+    output['hist'][m,:] = -9999
+
     #Output the properties
-    for stat in output:
-     fp[var][stat][il,:] = output[stat]
+    fp[var]['hist'][:,il] = output['hist']
+    fp[var]['ebins'][:] = data['bins']
 
   else:
 
@@ -265,7 +264,7 @@ def calculate_properties_point(instance,fp):
      fp[var][stat][:] = output[stat]
 
   t1 = time.time()
-  print instance.metadata['process_id'],"Finished %s maps in %f seconds" % (var,(t1-t0))
+  print instance.metadata['process_id'],"Finished %s points in %f seconds" % (var,(t1-t0))
   
  return
 
@@ -337,11 +336,12 @@ class initialize_point:
   self.np = self.fp_probabilities.variables[self.metadata['vm']['rank']].shape[1]
   self.nl = len(self.fp_properties.variables['upper_depth'][:])
   if self.nl > self.metadata['maxnl']:self.nl = self.metadata['maxnl']
+  self.nb = len(self.fp_properties.dimensions['bins'])
 
   #Construct the shapes of all the input variables
   self.variables = {}
   for var in self.metadata['vars']:
-   self.variables[var] = {'shape':self.fp_properties[var]['mean'].shape,
+   self.variables[var] = {'shape':self.fp_properties[var]['hist'].shape,
                           'units':self.fp_properties[var].units,
                           'description':self.fp_properties[var].description}
 
@@ -363,26 +363,15 @@ class initialize_point:
   #Compute the index in the data
   idx = np.in1d(mids,ids)
   #Construct parameters
-  m0 = idx & (data['mean'] != undef)
+  m0 = idx & (np.mean(data['hist'],axis=1) != -9999.0)
   m1 = np.in1d(ids,mids[m0])
-  #max
-  max = np.zeros(nc)
-  max[:] = undef
-  max[m1] = data['max'][m0]
-  #min
-  min = np.zeros(nc)
-  min[:] = undef
-  min[m1] = data['min'][m0]
-  #mean
-  mean = np.zeros(nc)
-  mean[:] = undef
-  mean[m1] = data['mean'][m0]
-  #var
-  var = np.zeros(nc)
-  var[:] = undef
-  var[m1] = data['var'][m0]
+  #hist
+  hist = np.zeros((nc,100))
+  hist[:] = -9999.0
+  hist[m1] = data['hist'][m0,:]
+
   #place all the parameters together
-  params = {'min':min,'max':max,'mean':mean,'var':var}
+  params = {'hist':hist,}
   
   return (mapping,params)
 
@@ -392,6 +381,20 @@ class initialize_point:
   #Extract the parameters
   (mapping,params) = self.extract_parameters(data)
 
+  #Compute the histogram per cell
+  hist = np.zeros((self.prob.shape[1],100))
+  hist[:] = -9999.0
+  for p in xrange(self.rank.shape[1]):
+   #Extract the probabilities
+   probs = self.prob[:,p]
+   #Extract the indices for the classes at this cell
+   idx = mapping[self.rank[:,p]]
+   m = np.mean(params['hist'][idx,:],axis=1) != -9999.0
+   tmp = probs[m,np.newaxis]*params['hist'][idx,:][m]
+   #Compute the weighted histograms
+   hist[p,:] = np.sum(tmp,axis=0)
+ 
+  '''
   #Calculate the beta parameters
   max_in = params['max']
   ncmax = self.metadata['ncmax']
@@ -404,15 +407,19 @@ class initialize_point:
   (min,max,mean,var,alpha,beta) = propr_tools_fortran.compute_parameters_point(max_in,min_in,mean_in,var_in,
                         self.prob,self.rank,mapping,ncmax)
   #print 'creating beta parameters',time.time() - t0
+  '''
   
   #Assemble output
+  #Assemble output
   output = {}
+  output['hist'] = hist
+  '''output = {}
   output['mean'] = mean
   output['min'] = min
   output['max'] = max
   output['alpha'] = alpha
   output['beta'] = beta
-  output['var'] = var
+  output['var'] = var'''
 
   return output
 
@@ -516,27 +523,8 @@ class initialize:
     hist[x,y,:] = np.sum(probs[:,np.newaxis]*params['hist'][idx,:],axis=0)
   '''
 
-  '''
-  #Calculate the beta parameters
-  max_in = params['max']
-  ncmax = self.metadata['ncmax']
-  min_in = params['min']
-  mean_in = params['mean']
-  var_in = params['var']
-  t0 = time.time() 
-  (min,max,mean,var,alpha,beta) = propr_tools_fortran.compute_parameters(max_in,min_in,mean_in,var_in,
-                        self.prob,self.rank,mapping,ncmax)
-  #print 'creating beta parameters',time.time() - t0
-  '''
-  
   #Assemble output
   output = {}
   output['hist'] = hist
-  #output['mean'] = mean
-  #output['min'] = min
-  #output['max'] = max
-  #output['alpha'] = alpha
-  #output['beta'] = beta
-  #output['var'] = var
 
   return output
