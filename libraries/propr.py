@@ -89,16 +89,8 @@ def initialize_netcdf_output_point(instance):
    grp.createVariable('hist','f4',('p','z','b'))
    grp.createVariable('ebins','f4',('eb'))
   else:
-   grp.createVariable('mean','f4',('p',))
-   grp.createVariable('max','f4',('p',))
-   grp.createVariable('min','f4',('p',))
-   grp.createVariable('alpha','f4',('p',))
-   grp.createVariable('beta','f4',('p',))
-   grp.createVariable('var','f4',('p',))
-  #Initialize to undef
-  #stats = ['mean','min','max','alpha','beta','var']
-  #for stat in stats:
-  # grp[stat][:] = undef
+   grp.createVariable('hist','f4',('p','b'))
+   grp.createVariable('ebins','f4',('eb'))
 
  return fp
 
@@ -249,19 +241,19 @@ def calculate_properties_point(instance,fp):
     #Define the soil property data
     data = {}
     data['id'] = instance.fp_properties.variables['id'][:]
-    data['min'] = instance.fp_properties.groups[var].variables['min'][:]
-    data['max'] = instance.fp_properties.groups[var].variables['max'][:]
-    data['mean'] = instance.fp_properties.groups[var].variables['mean'][:]
-    data['alpha'] = instance.fp_properties.groups[var].variables['alpha'][:]
-    data['beta'] = instance.fp_properties.groups[var].variables['beta'][:]
-    data['var'] = instance.fp_properties.groups[var].variables['var'][:]
+    data['hist'] = instance.fp_properties.groups[var].variables['hist'][:,:]
+    data['bins'] = instance.fp_properties.groups[var].variables['bins'][:]
 
     #Calculate the properties
     output = instance.calculate_properties(data)
 
+    #Set zeros to -9999
+    m = np.sum(output['hist'],axis=0) == 0
+    output['hist'][m,:] = -9999
+
     #Output the properties
-    for stat in output:
-     fp[var][stat][:] = output[stat]
+    fp[var]['hist'][:] = output['hist']
+    fp[var]['ebins'][:] = data['bins']
 
   t1 = time.time()
   print instance.metadata['process_id'],"Finished %s points in %f seconds" % (var,(t1-t0))
